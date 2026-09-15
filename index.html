@@ -1,7 +1,542 @@
-<!doctype html>
-<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Skyestone TV Admin</title><link rel="stylesheet" href="style.css"></head>
-<body><header><div><h1>Skyestone TV Admin</h1><p>Create, edit and remove information shown on Skyestone TVs.</p></div><div id="status">Demo mode</div></header>
-<main>
-<section class="panel"><h2>Add / Edit Information</h2><form id="itemForm"><input type="hidden" id="id"><label>Display<select id="display"><option value="hoa">HOA Business</option><option value="social">Social</option><option value="fitness">Fitness</option><option value="fitness-reservations">Fitness Room Reservations</option><option value="conference">Conference Room Reservations</option></select></label><div class="grid"><label>Date<input id="date" type="date" required></label><label>Start Time<input id="start" type="time" required></label><label>End Time<input id="end" type="time" required></label></div><label>Title<input id="title" required maxlength="100"></label><label>Details<textarea id="details" rows="3" maxlength="300"></textarea></label><label>Reserved By <input id="reservedBy" maxlength="80" placeholder="Optional"></label><div class="buttons"><button type="submit">Save Information</button><button type="button" id="cancel" class="secondary">Cancel</button></div></form></section>
-<section class="panel"><div class="toolbar"><h2>Current & Upcoming</h2><select id="filter"><option value="all">All Displays</option><option value="hoa">HOA Business</option><option value="social">Social</option><option value="fitness">Fitness</option><option value="fitness-reservations">Fitness Room Reservations</option><option value="conference">Conference Room Reservations</option></select></div><div id="list"></div></section>
-</main><script src="admin.js"></script></body></html>
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>Skyestone TV Admin</title>
+
+<style>
+:root {
+    font-family: Arial, Helvetica, sans-serif;
+    color: #1f2937;
+    background: #f3f4f6;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+}
+
+header {
+    background: #17365d;
+    color: white;
+    padding: 22px 28px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+header h1 {
+    margin: 0;
+    font-size: 25px;
+}
+
+header p {
+    margin: 5px 0 0;
+    opacity: 0.85;
+}
+
+.container {
+    max-width: 1200px;
+    margin: 28px auto;
+    padding: 0 18px;
+}
+
+.grid {
+    display: grid;
+    grid-template-columns: 380px 1fr;
+    gap: 24px;
+}
+
+.panel {
+    background: white;
+    border-radius: 12px;
+    padding: 22px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.07);
+}
+
+h2 {
+    margin: 0 0 18px;
+    font-size: 19px;
+}
+
+label {
+    display: block;
+    font-weight: bold;
+    font-size: 13px;
+    margin: 13px 0 6px;
+}
+
+input,
+select,
+textarea {
+    width: 100%;
+    padding: 10px 11px;
+    border: 1px solid #cbd5e1;
+    border-radius: 7px;
+    font: inherit;
+    background: white;
+}
+
+textarea {
+    min-height: 90px;
+    resize: vertical;
+}
+
+.row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+.buttons {
+    display: flex;
+    gap: 9px;
+    margin-top: 18px;
+}
+
+button {
+    border: 0;
+    border-radius: 7px;
+    padding: 10px 14px;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+button:hover {
+    opacity: 0.9;
+}
+
+.primary {
+    background: #17365d;
+    color: white;
+}
+
+.secondary {
+    background: #e5e7eb;
+    color: #111827;
+}
+
+.danger {
+    background: #b91c1c;
+    color: white;
+}
+
+.status {
+    margin-top: 12px;
+    padding: 10px;
+    border-radius: 7px;
+    display: none;
+}
+
+.status.ok {
+    display: block;
+    background: #dcfce7;
+    color: #166534;
+}
+
+.status.err {
+    display: block;
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.toolbar {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 15px;
+}
+
+.toolbar input {
+    flex: 1;
+    min-width: 180px;
+}
+
+.item {
+    border: 1px solid #e2e8f0;
+    border-radius: 9px;
+    padding: 15px;
+    margin-bottom: 10px;
+}
+
+.item-top {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.badge {
+    display: inline-block;
+    background: #e2e8f0;
+    border-radius: 999px;
+    padding: 4px 9px;
+    font-size: 11px;
+    font-weight: bold;
+}
+
+.item h3 {
+    margin: 8px 0 5px;
+    font-size: 17px;
+}
+
+.meta {
+    font-size: 13px;
+    color: #64748b;
+}
+
+.details {
+    margin-top: 8px;
+    white-space: pre-wrap;
+}
+
+.item-actions {
+    margin-top: 12px;
+    display: flex;
+    gap: 8px;
+}
+
+.small {
+    font-size: 12px;
+    color: #64748b;
+}
+
+.empty {
+    padding: 30px;
+    text-align: center;
+    color: #64748b;
+}
+
+.notice {
+    background: #fff7ed;
+    border: 1px solid #fed7aa;
+    padding: 13px;
+    border-radius: 8px;
+    margin-bottom: 18px;
+    font-size: 13px;
+}
+
+@media (max-width: 850px) {
+    .grid {
+        grid-template-columns: 1fr;
+    }
+
+    header {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 10px;
+    }
+}
+</style>
+</head>
+
+<body>
+
+<header>
+
+    <div>
+        <h1>Skyestone TV Admin</h1>
+
+        <p>
+            Manage information displayed on Skyestone televisions.
+        </p>
+    </div>
+
+    <div
+        class="small"
+        style="color:white;"
+    >
+        Skyestone TV Management
+    </div>
+
+</header>
+
+
+<div class="container">
+
+    <div class="notice">
+
+        <strong>Current mode:</strong>
+
+        This Admin site is currently operating in
+        <strong>local preview mode</strong>.
+
+        Changes are saved in this browser only.
+
+        The GitHub connection will be added in the next step.
+
+    </div>
+
+
+    <div class="grid">
+
+
+        <!-- ADD / EDIT FORM -->
+
+        <section class="panel">
+
+            <h2 id="formTitle">
+                Add Calendar Item
+            </h2>
+
+
+            <form id="itemForm">
+
+
+                <label for="display">
+                    Display
+                </label>
+
+                <select
+                    id="display"
+                    required
+                >
+
+                    <option value="hoa">
+                        HOA Business
+                    </option>
+
+                    <option value="social">
+                        Social
+                    </option>
+
+                    <option value="fitness">
+                        Fitness
+                    </option>
+
+                    <option value="fitness-reservations">
+                        Fitness Room Reservations
+                    </option>
+
+                    <option value="conference">
+                        Conference Room Reservations
+                    </option>
+
+                </select>
+
+
+                <label for="date">
+                    Date
+                </label>
+
+                <input
+                    id="date"
+                    type="date"
+                    required
+                >
+
+
+                <div class="row">
+
+                    <div>
+
+                        <label for="start">
+                            Start
+                        </label>
+
+                        <input
+                            id="start"
+                            type="time"
+                            required
+                        >
+
+                    </div>
+
+
+                    <div>
+
+                        <label for="end">
+                            End
+                        </label>
+
+                        <input
+                            id="end"
+                            type="time"
+                            required
+                        >
+
+                    </div>
+
+                </div>
+
+
+                <label for="title">
+                    Title
+                </label>
+
+                <input
+                    id="title"
+                    type="text"
+                    placeholder="Activity or reservation title"
+                    required
+                >
+
+
+                <label for="details">
+                    Details
+                </label>
+
+                <textarea
+                    id="details"
+                    placeholder="Information shown on the TV"
+                ></textarea>
+
+
+                <label for="reservedBy">
+                    Reserved By
+                    <span class="small">
+                        (optional)
+                    </span>
+                </label>
+
+                <input
+                    id="reservedBy"
+                    type="text"
+                    placeholder="Resident, club, HOA, etc."
+                >
+
+
+                <div class="buttons">
+
+                    <button
+                        class="primary"
+                        type="submit"
+                        id="saveBtn"
+                    >
+                        Add Item
+                    </button>
+
+
+                    <button
+                        class="secondary"
+                        type="button"
+                        id="cancelBtn"
+                        style="display:none;"
+                    >
+                        Cancel Edit
+                    </button>
+
+                </div>
+
+
+                <div
+                    id="status"
+                    class="status"
+                ></div>
+
+
+            </form>
+
+        </section>
+
+
+
+        <!-- CALENDAR LIST -->
+
+        <section class="panel">
+
+            <h2>
+                Calendar Items
+            </h2>
+
+
+            <div class="toolbar">
+
+                <input
+                    id="search"
+                    type="search"
+                    placeholder="Search title, details, or reserved by..."
+                >
+
+
+                <select id="filter">
+
+                    <option value="all">
+                        All Displays
+                    </option>
+
+                    <option value="hoa">
+                        HOA Business
+                    </option>
+
+                    <option value="social">
+                        Social
+                    </option>
+
+                    <option value="fitness">
+                        Fitness
+                    </option>
+
+                    <option value="fitness-reservations">
+                        Fitness Room Reservations
+                    </option>
+
+                    <option value="conference">
+                        Conference Room Reservations
+                    </option>
+
+                </select>
+
+            </div>
+
+
+            <div id="list"></div>
+
+        </section>
+
+    </div>
+
+</div>
+
+
+
+<script>
+
+/*
+    SKYESTONE TV ADMIN
+
+    Current version:
+    Local browser storage only.
+
+    Later:
+    This will connect to the GitHub calendar.json file.
+*/
+
+
+const STORAGE_KEY =
+    "skyestoneTvAdminCalendarV2";
+
+
+
+/*
+    Temporary starting data.
+
+    This matches the test information
+    currently being used on the TV site.
+*/
+
+const defaults = [
+
+    {
+        display: "social",
+        date: "2026-09-15",
+        start: "12:00",
+        end: "13:00",
+        title: "Test Social Activity",
+        details: "Testing the GitHub calendar system.",
+        reservedBy: "Kenny"
+    }
+
+];
+
+
+
+/*
+    Load saved information
+    from t
+```
