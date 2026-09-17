@@ -224,9 +224,28 @@
 <div class="container">
 
     <div class="notice">
-        <strong>Current Mode:</strong>
-        This version saves calendar information in this browser for testing.
-        The GitHub connection will be added after the Admin system is confirmed to be working.
+        <strong>Skyestone TV Calendar Management:</strong>
+        Changes are saved as a local draft in this browser until you publish them to the TV system.
+        Use <strong>Load from GitHub</strong> to get the current published calendar and
+        <strong>Publish to TVs</strong> to send your changes live.
+    </div>
+
+    <div class="card">
+        <h2>TV System Connection</h2>
+        <div id="connectionStatus" style="margin-bottom:15px;">
+            <span class="badge">Not connected</span>
+        </div>
+        <div class="button-row">
+            <button type="button" class="secondary" id="loadGitHubButton">
+                Load from GitHub
+            </button>
+            <button type="button" class="primary" id="publishButton">
+                Publish to TVs
+            </button>
+        </div>
+        <div id="publishStatus" style="margin-top:15px;color:#6b7280;font-size:14px;">
+            No publication has been made from this browser yet.
+        </div>
     </div>
 
     <!-- ADD / EDIT FORM -->
@@ -344,6 +363,8 @@
 <script>
 
 const STORAGE_KEY = "skyestoneTvAdminCalendarV2";
+const PUBLISHED_STORAGE_KEY = "skyestoneTvAdminLastPublished";
+const WORKER_URL = "https://skyestone-tv-api.assistant-manager-44e.workers.dev/";
 
 const displayNames = {
     hoa: "HOA BUSINESS",
@@ -906,6 +927,179 @@ filterDisplay.addEventListener(
     "change",
     renderItems
 );
+
+
+/* ----------------------------------------------------
+   GITHUB / CLOUDFLARE CONNECTION
+---------------------------------------------------- */
+
+const loadGitHubButton = document.getElementById("loadGitHubButton");
+const publishButton = document.getElementById("publishButton");
+const connectionStatus = document.getElementById("connectionStatus");
+const publishStatus = document.getElementById("publishStatus");
+
+function setConnectionStatus(text, type = "normal") {
+    let style = "";
+    if (type === "success") style = ' style="background:#dcfce7;color:#166534;"';
+    if (type === "error") style = ' style="background:#fee2e2;color:#991b1b;"';
+
+    connectionStatus.innerHTML =
+        '<span class="badge"' + style + '>' + escapeHtml(text) + '</span>';
+}
+
+function saveLastPublished(calendar) {
+    localStorage.setItem(PUBLISHED_STORAGE_KEY, JSON.stringify({
+        time: new Date().toISOString(),
+        count: Array.isArray(calendar) ? calendar.length : 0
+    }));
+    updateLastPublished();
+}
+
+function updateLastPublished() {
+    const saved = localStorage.getItem(PUBLISHED_STORAGE_KEY);
+
+    if (!saved) {
+        publishStatus.textContent =
+            "No publication has been made from this browser yet.";
+        return;
+    }
+
+    try {
+        const record = JSON.parse(saved);
+        publishStatus.textContent =
+            "Last published: " +
+            new Date(record.time).toLocaleString() +
+            " • " + record.count + " calendar item" +
+            (record.count === 1 ? "" : "s") + " sent to the TV system.";
+    } catch (error) {
+        publishStatus.textContent =
+            "A previous publication was recorded, but its date could not be read.";
+    }
+}
+
+async function loadFromGitHub() {
+    if (!confirm(
+        "Load the currently published calendar from GitHub?\n\n" +
+        "This will replace the calendar currently shown in this browser."
+    )) return;
+
+    loadGitHubButton.disabled = true;
+    publishButton.disabled = true;
+    setConnectionStatus("Loading published calendar...");
+    publishStatus.textContent = "Connecting to the TV system...";
+
+    try {
+        const response = await fetch(WORKER_URL, {
+            method: "GET",
+            cache: "no-store"
+        });
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success || !Array.isArray(data.calendar)) {
+            throw new Error(data.error || "The TV system returned an unexpected response.");
+        }
+
+        calendarItems = data.calendar.map(item => ({
+            id: item.id || generateId(),
+            display: item.display,
+            date: item.date,
+            start: item.start,
+            end: item.end,
+            title: item.title || "",
+            details: item.details || "",
+            reservedBy: item.reservedBy || ""
+        }));
+
+        saveItems(calendarItems);
+        resetForm();
+        renderItems();
+
+        setConnectionStatus("Connected • Published calendar loaded", "success");
+        publishStatus.textContent =
+            "Loaded " + calendarItems.length + " published calendar item" +
+            (calendarItems.length === 1 ? "" : "s") + " from GitHub.";
+
+    } catch (error) {
+        console.error(error);
+        setConnectionStatus("Connection error", "error");
+        publishStatus.textContent = "Unable to load the published calendar.";
+        alert("Unable to load the published calendar.\n\n" + error.message);
+    } finally {
+        loadGitHubButton.disabled = false;
+        publishButton.disabled = false;
+    }
+}
+
+async function publishToTVs() {
+    const adminKey = prompt(
+        "Enter the Skyestone TV Admin Key to publish these changes:"
+    );
+
+    if (adminKey === null) return;
+
+    if (!adminKey.trim()) {
+        alert("No Admin Key was entered.");
+        return;
+    }
+
+    if (!confirm(
+        "Publish " + calendarItems.length + " calendar item" +
+        (calendarItems.length === 1 ? "" : "s") +
+        " to the Skyestone TVs?\n\n" +
+        "This will replace the currently published calendar."
+    )) return;
+
+    loadGitHubButton.disabled = true;
+    publishButton.disabled = true;
+    setConnectionStatus("Publishing...");
+    publishStatus.textContent = "Sending calendar to the TV system...";
+
+    try {
+        const response = await fetch(WORKER_URL, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "X-Admin-Key": adminKey.trim()
+            },
+            body: JSON.stringify({ calendar: calendarItems })
+        });
+
+        let data = {};
+        try { data = await response.json(); } catch (_) {}
+
+        if (!response.ok || !data.success) {
+            throw new Error(
+                data.error || "The TV system did not confirm publication."
+            );
+        }
+
+        saveItems(calendarItems);
+        saveLastPublished(calendarItems);
+        setConnectionStatus("Published successfully", "success");
+        publishStatus.textContent =
+            "Published " + calendarItems.length + " calendar item" +
+            (calendarItems.length === 1 ? "" : "s") + " to the TV system.";
+
+        alert(
+            "Calendar published successfully.\n\n" +
+            "The TV screens will receive the updated calendar automatically."
+        );
+
+    } catch (error) {
+        console.error(error);
+        setConnectionStatus("Publication failed", "error");
+        publishStatus.textContent = "Publication failed.";
+        alert("The calendar could not be published.\n\n" + error.message);
+    } finally {
+        loadGitHubButton.disabled = false;
+        publishButton.disabled = false;
+    }
+}
+
+loadGitHubButton.addEventListener("click", loadFromGitHub);
+publishButton.addEventListener("click", publishToTVs);
+updateLastPublished();
 
 
 /* ----------------------------------------------------
