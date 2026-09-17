@@ -211,6 +211,17 @@
             flex-direction: column;
         }
     }
+
+    .import-card { border: 2px dashed #cbd5e1; }
+    .import-help { color:#6b7280; font-size:14px; line-height:1.5; margin-top:-8px; margin-bottom:16px; }
+    .import-preview { margin-top:20px; }
+    .import-row { display:grid; grid-template-columns: 1.7fr 1fr 1.2fr 1.2fr 1fr; gap:10px; align-items:center; padding:12px; border:1px solid #e5e7eb; border-radius:8px; margin-bottom:8px; background:#fafafa; }
+    .import-row input, .import-row select { padding:8px; font-size:14px; }
+    .import-title { font-weight:bold; }
+    .import-meta { color:#6b7280; font-size:13px; }
+    .import-actions { display:flex; gap:10px; flex-wrap:wrap; }
+    @media (max-width:900px) { .import-row { grid-template-columns:1fr 1fr; } }
+
 </style>
 </head>
 
@@ -329,6 +340,22 @@
             </div>
 
         </form>
+    </div>
+
+    <div class="card import-card">
+        <h2>Import Calendar</h2>
+        <p class="import-help">Upload a standard <strong>.ics (iCalendar)</strong> file. The Admin site will read the event title, date, times, description, location, and organizer when available. You will choose which TV display each item belongs to and review everything before adding it to the calendar.</p>
+        <input type="file" id="icsFile" accept=".ics,text/calendar" style="display:none;">
+        <div class="button-row">
+            <button type="button" class="secondary" id="chooseIcsButton">Choose .ics Calendar File</button>
+            <button type="button" class="secondary" id="clearImportButton" style="display:none;">Clear Import</button>
+        </div>
+        <div id="importStatus" style="margin-top:15px;color:#6b7280;font-size:14px;"></div>
+        <div id="importPreview" class="import-preview"></div>
+        <div id="importActions" class="import-actions" style="display:none;">
+            <button type="button" class="primary" id="importSelectedButton">Import Selected Items</button>
+            <button type="button" class="secondary" id="cancelImportButton">Cancel</button>
+        </div>
     </div>
 
     <!-- CALENDAR ITEMS -->
@@ -928,6 +955,222 @@ filterDisplay.addEventListener(
     renderItems
 );
 
+
+/* ----------------------------------------------------
+   ICS CALENDAR IMPORT
+---------------------------------------------------- */
+const icsFile = document.getElementById("icsFile");
+const chooseIcsButton = document.getElementById("chooseIcsButton");
+const clearImportButton = document.getElementById("clearImportButton");
+const importStatus = document.getElementById("importStatus");
+const importPreview = document.getElementById("importPreview");
+const importActions = document.getElementById("importActions");
+const importSelectedButton = document.getElementById("importSelectedButton");
+const cancelImportButton = document.getElementById("cancelImportButton");
+let importedItems = [];
+
+const importDisplayOptions = [
+    ["hoa", "HOA Business"],
+    ["social", "Social"],
+    ["fitness", "Fitness"],
+    ["fitness-reservations", "Fitness Room Reservations"],
+    ["conference", "Conference Room Reservations"]
+];
+
+function unfoldIcsLines(text) {
+    const raw = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+    const lines = [];
+    raw.forEach(line => {
+        if ((line.startsWith(" ") || line.startsWith("\t")) && lines.length) {
+            lines[lines.length - 1] += line.substring(1);
+        } else {
+            lines.push(line);
+        }
+    });
+    return lines;
+}
+
+function parseIcsProperty(line) {
+    const colon = line.indexOf(":");
+    if (colon < 0) return null;
+    const left = line.substring(0, colon);
+    const value = line.substring(colon + 1);
+    const parts = left.split(";");
+    const name = parts.shift().toUpperCase();
+    const params = {};
+    parts.forEach(part => {
+        const eq = part.indexOf("=");
+        if (eq > -1) params[part.substring(0, eq).toUpperCase()] = part.substring(eq + 1);
+    });
+    return { name, params, value };
+}
+
+function unescapeIcs(value) {
+    return String(value || "")
+        .replace(/\\n/gi, "\n")
+        .replace(/\\,/g, ",")
+        .replace(/\\;/g, ";")
+        .replace(/\\\\/g, "\\");
+}
+
+function parseIcsDateTime(value, params) {
+    if (!value) return null;
+    const v = value.trim();
+    if (/^\d{8}$/.test(v)) return { dateOnly:true, date:v.substring(0,4)+"-"+v.substring(4,6)+"-"+v.substring(6,8) };
+    const m = v.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z)?$/);
+    if (!m) return null;
+    const date = m[1]+"-"+m[2]+"-"+m[3];
+    const time = m[4]+":"+m[5];
+    if (m[7]) {
+        const d = new Date(Date.UTC(+m[1], +m[2]-1, +m[3], +m[4], +m[5], +m[6]));
+        return { date: localDateString(d), time: localTimeString(d) };
+    }
+    return { date, time };
+}
+
+function localDateString(d) {
+    return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+}
+function localTimeString(d) {
+    return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");
+}
+
+function parseIcs(text) {
+    const lines = unfoldIcsLines(text);
+    const events = [];
+    let current = null;
+    lines.forEach(line => {
+        const prop = parseIcsProperty(line);
+        if (!prop) return;
+        if (prop.name === "BEGIN" && prop.value.toUpperCase() === "VEVENT") {
+            current = {};
+            return;
+        }
+        if (prop.name === "END" && prop.value.toUpperCase() === "VEVENT") {
+            if (current) events.push(current);
+            current = null;
+            return;
+        }
+        if (!current) return;
+        if (!(prop.name in current)) current[prop.name] = prop;
+    });
+    return events.map((e, index) => {
+        const start = parseIcsDateTime(e.DTSTART && e.DTSTART.value, e.DTSTART && e.DTSTART.params);
+        const end = parseIcsDateTime(e.DTEND && e.DTEND.value, e.DTEND && e.DTEND.params);
+        if (!start || !end || start.dateOnly || end.dateOnly) return null;
+        const location = unescapeIcs(e.LOCATION && e.LOCATION.value);
+        const description = unescapeIcs(e.DESCRIPTION && e.DESCRIPTION.value);
+        const organizer = unescapeIcs(e.ORGANIZER && e.ORGANIZER.value).replace(/^mailto:/i, "");
+        let details = description;
+        if (location) details += (details ? "\n" : "") + "Location: " + location;
+        if (organizer) details += (details ? "\n" : "") + "Organizer: " + organizer;
+        return {
+            tempId: "import-" + index + "-" + Date.now(),
+            selected: true,
+            display: "social",
+            date: start.date,
+            start: start.time,
+            end: end.time,
+            title: unescapeIcs(e.SUMMARY && e.SUMMARY.value) || "Imported Calendar Item",
+            details,
+            reservedBy: ""
+        };
+    }).filter(Boolean);
+}
+
+function renderImportPreview() {
+    if (!importedItems.length) {
+        importPreview.innerHTML = "";
+        importActions.style.display = "none";
+        return;
+    }
+    importPreview.innerHTML = "<h3>Review Imported Items</h3>" + importedItems.map((item, i) => `
+        <div class="import-row">
+            <label style="display:flex;gap:8px;align-items:center;font-weight:normal;">
+                <input type="checkbox" data-import-check="${i}" ${item.selected ? "checked" : ""}>
+                <span><span class="import-title">${escapeHtml(item.title)}</span><br><span class="import-meta">${escapeHtml(formatDate(item.date))} • ${escapeHtml(formatTime(item.start))}–${escapeHtml(formatTime(item.end))}</span></span>
+            </label>
+            <select data-import-display="${i}" aria-label="TV display">${importDisplayOptions.map(o => `<option value="${o[0]}" ${item.display === o[0] ? "selected" : ""}>${o[1]}</option>`).join("")}</select>
+            <input type="date" data-import-date="${i}" value="${escapeHtml(item.date)}" aria-label="Date">
+            <div><input type="time" data-import-start="${i}" value="${escapeHtml(item.start)}"><input type="time" data-import-end="${i}" value="${escapeHtml(item.end)}" style="margin-top:5px"></div>
+            <input type="text" data-import-title="${i}" value="${escapeHtml(item.title)}" aria-label="Title">
+        </div>
+    `).join("");
+    importPreview.querySelectorAll("[data-import-check]").forEach(el => el.addEventListener("change", e => importedItems[+e.target.dataset.importCheck].selected = e.target.checked));
+    importPreview.querySelectorAll("[data-import-display]").forEach(el => el.addEventListener("change", e => importedItems[+e.target.dataset.importDisplay].display = e.target.value));
+    importPreview.querySelectorAll("[data-import-date]").forEach(el => el.addEventListener("change", e => importedItems[+e.target.dataset.importDate].date = e.target.value));
+    importPreview.querySelectorAll("[data-import-start]").forEach(el => el.addEventListener("change", e => importedItems[+e.target.dataset.importStart].start = e.target.value));
+    importPreview.querySelectorAll("[data-import-end]").forEach(el => el.addEventListener("change", e => importedItems[+e.target.dataset.importEnd].end = e.target.value));
+    importPreview.querySelectorAll("[data-import-title]").forEach(el => el.addEventListener("change", e => importedItems[+e.target.dataset.importTitle].title = e.target.value));
+    importActions.style.display = "flex";
+}
+
+chooseIcsButton.addEventListener("click", () => icsFile.click());
+icsFile.addEventListener("change", async () => {
+    const file = icsFile.files[0];
+    if (!file) return;
+    try {
+        const text = await file.text();
+        importedItems = parseIcs(text);
+        clearImportButton.style.display = "inline-block";
+        if (!importedItems.length) {
+            importStatus.textContent = "No usable timed events were found in this .ics file.";
+            importPreview.innerHTML = "";
+            importActions.style.display = "none";
+        } else {
+            importStatus.textContent = "Found " + importedItems.length + " timed calendar item" + (importedItems.length === 1 ? "" : "s") + ". Review the items below before importing.";
+            renderImportPreview();
+        }
+    } catch (error) {
+        importStatus.textContent = "Unable to read the calendar file.";
+        alert("Unable to read the .ics file.\n\n" + error.message);
+    }
+});
+
+function clearImport() {
+    importedItems = [];
+    icsFile.value = "";
+    importStatus.textContent = "";
+    importPreview.innerHTML = "";
+    importActions.style.display = "none";
+    clearImportButton.style.display = "none";
+}
+clearImportButton.addEventListener("click", clearImport);
+cancelImportButton.addEventListener("click", clearImport);
+
+importSelectedButton.addEventListener("click", () => {
+    const selected = importedItems.filter(item => item.selected);
+    if (!selected.length) {
+        alert("Select at least one calendar item to import.");
+        return;
+    }
+    const invalid = selected.find(item => !item.date || !item.start || !item.end || !item.title.trim() || item.end <= item.start);
+    if (invalid) {
+        alert("Each selected item needs a title, date, start time, and an end time later than the start time.");
+        return;
+    }
+    selected.forEach(item => {
+        calendarItems.push({
+            id: generateId(),
+            display: item.display,
+            date: item.date,
+            start: item.start,
+            end: item.end,
+            title: item.title.trim(),
+            details: item.details.trim(),
+            reservedBy: item.reservedBy.trim()
+        });
+    });
+    saveItems(calendarItems);
+    renderItems();
+    importStatus.textContent = "Imported " + selected.length + " calendar item" + (selected.length === 1 ? "" : "s") + " into the Admin calendar. They have not been published to the TVs yet.";
+    importedItems = [];
+    icsFile.value = "";
+    importPreview.innerHTML = "";
+    importActions.style.display = "none";
+    clearImportButton.style.display = "none";
+    window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
+});
 
 /* ----------------------------------------------------
    GITHUB / CLOUDFLARE CONNECTION
