@@ -220,6 +220,10 @@
     .import-title { font-weight:bold; }
     .import-meta { color:#6b7280; font-size:13px; }
     .import-actions { display:flex; gap:10px; flex-wrap:wrap; }
+    .display-checks { display:flex; flex-wrap:wrap; gap:10px; margin-top:8px; }
+    .display-check { display:flex; align-items:center; gap:6px; font-weight:normal; font-size:14px; background:#f8fafc; border:1px solid #e5e7eb; padding:7px 9px; border-radius:7px; }
+    .display-check input { width:auto; }
+    .import-display-box { grid-column: 1 / -1; }
     @media (max-width:900px) { .import-row { grid-template-columns:1fr 1fr; } }
 
 </style>
@@ -270,7 +274,7 @@
             <div class="form-grid">
 
                 <div>
-                    <label for="display">Display</label>
+                    <label for="display">Primary Display</label>
                     <select id="display" required>
                         <option value="hoa">HOA Business</option>
                         <option value="social">Social</option>
@@ -278,6 +282,17 @@
                         <option value="fitness-reservations">Fitness Room Reservations</option>
                         <option value="conference">Conference Room Reservations</option>
                     </select>
+                </div>
+
+                <div>
+                    <label>Also Show On</label>
+                    <div class="display-checks">
+                        <label class="display-check"><input type="checkbox" name="alsoDisplay" value="hoa"> HOA Business</label>
+                        <label class="display-check"><input type="checkbox" name="alsoDisplay" value="social"> Social</label>
+                        <label class="display-check"><input type="checkbox" name="alsoDisplay" value="fitness"> Fitness</label>
+                        <label class="display-check"><input type="checkbox" name="alsoDisplay" value="fitness-reservations"> Fitness Room Reservations</label>
+                        <label class="display-check"><input type="checkbox" name="alsoDisplay" value="conference"> Conference Room Reservations</label>
+                    </div>
                 </div>
 
                 <div>
@@ -344,7 +359,15 @@
 
     <div class="card import-card">
         <h2>Import Calendar</h2>
-        <p class="import-help">Upload a standard <strong>.ics (iCalendar)</strong> file. The Admin site will read the event title, date, times, description, location, and organizer when available. You will choose which TV display each item belongs to and review everything before adding it to the calendar.</p>
+        <p class="import-help">Upload a standard <strong>.ics (iCalendar)</strong> file. All items in the calendar will be assigned to the display you select below. You can then make individual exceptions using <strong>Also Show On</strong> checkboxes before importing.</p>
+        <label for="importPrimaryDisplay">Calendar Display</label>
+        <select id="importPrimaryDisplay" style="max-width:420px; margin-bottom:16px;">
+            <option value="hoa">HOA Business</option>
+            <option value="social">Social</option>
+            <option value="fitness">Fitness</option>
+            <option value="fitness-reservations">Fitness Room Reservations</option>
+            <option value="conference">Conference Room Reservations</option>
+        </select>
         <input type="file" id="icsFile" accept=".ics,text/calendar" style="display:none;">
         <div class="button-row">
             <button type="button" class="secondary" id="chooseIcsButton">Choose .ics Calendar File</button>
@@ -433,7 +456,7 @@ function loadItems() {
     const defaultItems = [
         {
             id: generateId(),
-            display: "social",
+            display: ["social"],
             date: "2026-09-15",
             start: "12:00",
             end: "13:00",
@@ -494,6 +517,25 @@ const end = document.getElementById("end");
 const title = document.getElementById("title");
 const details = document.getElementById("details");
 const reservedBy = document.getElementById("reservedBy");
+const alsoDisplayBoxes = () => Array.from(document.querySelectorAll('input[name="alsoDisplay"]'));
+
+function getSelectedDisplays(primary) {
+    const displays = [primary];
+    alsoDisplayBoxes().forEach(box => {
+        if (box.checked && !displays.includes(box.value)) displays.push(box.value);
+    });
+    return displays;
+}
+
+function setSelectedDisplays(displays) {
+    const list = Array.isArray(displays) ? displays : [displays];
+    alsoDisplayBoxes().forEach(box => {
+        box.checked = list.includes(box.value);
+    });
+    const primary = list[0] || "hoa";
+    display.value = primary;
+    alsoDisplayBoxes().forEach(box => { if (box.value === primary) box.checked = false; });
+}
 
 const formHeading = document.getElementById("formHeading");
 const saveButton = document.getElementById("saveButton");
@@ -585,6 +627,11 @@ function escapeHtml(value) {
    RENDER
 ---------------------------------------------------- */
 
+function getItemDisplays(item) {
+    if (Array.isArray(item.display)) return item.display;
+    return item.display ? [item.display] : [];
+}
+
 function renderItems() {
 
     const searchText =
@@ -605,7 +652,7 @@ function renderItems() {
 
         const matchesDisplay =
             selectedDisplay === "all" ||
-            item.display === selectedDisplay;
+            getItemDisplays(item).includes(selectedDisplay);
 
         return matchesSearch && matchesDisplay;
 
@@ -661,7 +708,7 @@ function renderItems() {
                             <div class="item-meta">
 
                                 <span class="badge">
-                                    ${escapeHtml(displayNames[item.display] || item.display)}
+                                    ${escapeHtml(getItemDisplays(item).map(d => displayNames[d] || d).join(" • "))}
                                 </span>
 
                                 ${escapeHtml(formatDate(item.date))}
@@ -762,7 +809,7 @@ form.addEventListener("submit", function(event) {
 
                 id: existingId,
 
-                display: display.value,
+                display: getSelectedDisplays(display.value),
 
                 date: date.value,
 
@@ -786,7 +833,7 @@ form.addEventListener("submit", function(event) {
 
             id: generateId(),
 
-            display: display.value,
+            display: getSelectedDisplays(display.value),
 
             date: date.value,
 
@@ -833,7 +880,7 @@ function editItem(id) {
 
     editId.value = item.id;
 
-    display.value = item.display;
+    setSelectedDisplays(item.display);
 
     date.value = item.date;
 
@@ -916,6 +963,7 @@ function deleteItem(id) {
 function resetForm() {
 
     form.reset();
+    alsoDisplayBoxes().forEach(box => box.checked = false);
 
     editId.value = "";
 
@@ -967,6 +1015,7 @@ const importPreview = document.getElementById("importPreview");
 const importActions = document.getElementById("importActions");
 const importSelectedButton = document.getElementById("importSelectedButton");
 const cancelImportButton = document.getElementById("cancelImportButton");
+const importPrimaryDisplay = document.getElementById("importPrimaryDisplay");
 let importedItems = [];
 
 const importDisplayOptions = [
@@ -1035,7 +1084,7 @@ function localTimeString(d) {
     return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");
 }
 
-function parseIcs(text) {
+function parseIcs(text, primaryDisplay) {
     const lines = unfoldIcsLines(text);
     const events = [];
     let current = null;
@@ -1090,14 +1139,23 @@ function renderImportPreview() {
                 <input type="checkbox" data-import-check="${i}" ${item.selected ? "checked" : ""}>
                 <span><span class="import-title">${escapeHtml(item.title)}</span><br><span class="import-meta">${escapeHtml(formatDate(item.date))} • ${escapeHtml(formatTime(item.start))}–${escapeHtml(formatTime(item.end))}</span></span>
             </label>
-            <select data-import-display="${i}" aria-label="TV display">${importDisplayOptions.map(o => `<option value="${o[0]}" ${item.display === o[0] ? "selected" : ""}>${o[1]}</option>`).join("")}</select>
+            <div class="import-display-box">
+                <strong>Displays:</strong>
+                <div class="display-checks">
+                    ${importDisplayOptions.map(o => `<label class="display-check"><input type="checkbox" data-import-display="${i}" value="${o[0]}" ${item.displays.includes(o[0]) ? "checked" : ""}> ${o[1]}</label>`).join("")}
+                </div>
+            </div>
             <input type="date" data-import-date="${i}" value="${escapeHtml(item.date)}" aria-label="Date">
             <div><input type="time" data-import-start="${i}" value="${escapeHtml(item.start)}"><input type="time" data-import-end="${i}" value="${escapeHtml(item.end)}" style="margin-top:5px"></div>
             <input type="text" data-import-title="${i}" value="${escapeHtml(item.title)}" aria-label="Title">
         </div>
     `).join("");
     importPreview.querySelectorAll("[data-import-check]").forEach(el => el.addEventListener("change", e => importedItems[+e.target.dataset.importCheck].selected = e.target.checked));
-    importPreview.querySelectorAll("[data-import-display]").forEach(el => el.addEventListener("change", e => importedItems[+e.target.dataset.importDisplay].display = e.target.value));
+    importPreview.querySelectorAll("[data-import-display]").forEach(el => el.addEventListener("change", e => {
+        const item = importedItems[+e.target.dataset.importDisplay];
+        const value = e.target.value;
+        item.displays = Array.from(importPreview.querySelectorAll(`[data-import-display="${e.target.dataset.importDisplay}"]:checked`)).map(x => x.value);
+    }));
     importPreview.querySelectorAll("[data-import-date]").forEach(el => el.addEventListener("change", e => importedItems[+e.target.dataset.importDate].date = e.target.value));
     importPreview.querySelectorAll("[data-import-start]").forEach(el => el.addEventListener("change", e => importedItems[+e.target.dataset.importStart].start = e.target.value));
     importPreview.querySelectorAll("[data-import-end]").forEach(el => el.addEventListener("change", e => importedItems[+e.target.dataset.importEnd].end = e.target.value));
@@ -1111,7 +1169,7 @@ icsFile.addEventListener("change", async () => {
     if (!file) return;
     try {
         const text = await file.text();
-        importedItems = parseIcs(text);
+        importedItems = parseIcs(text, importPrimaryDisplay.value);
         clearImportButton.style.display = "inline-block";
         if (!importedItems.length) {
             importStatus.textContent = "No usable timed events were found in this .ics file.";
@@ -1152,7 +1210,7 @@ importSelectedButton.addEventListener("click", () => {
     selected.forEach(item => {
         calendarItems.push({
             id: generateId(),
-            display: item.display,
+            display: item.displays,
             date: item.date,
             start: item.start,
             end: item.end,
@@ -1245,7 +1303,7 @@ async function loadFromGitHub() {
 
         calendarItems = data.calendar.map(item => ({
             id: item.id || generateId(),
-            display: item.display,
+            display: Array.isArray(item.display) ? item.display : [item.display],
             date: item.date,
             start: item.start,
             end: item.end,
