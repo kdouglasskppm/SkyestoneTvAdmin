@@ -1404,6 +1404,46 @@ updateLastPublished();
 
 
 /* ----------------------------------------------------
+   AUTOMATIC CLEANUP OF FINISHED EVENTS
+---------------------------------------------------- */
+
+function removeFinishedEvents() {
+    const now = new Date();
+    const before = calendarItems.length;
+
+    calendarItems = calendarItems.filter(item => {
+        if (!item.date || !item.end) return true;
+
+        const endDateTime = new Date(`${item.date}T${item.end}:00`);
+
+        if (Number.isNaN(endDateTime.getTime())) return true;
+
+        return endDateTime >= now;
+    });
+
+    const removed = before - calendarItems.length;
+
+    if (removed > 0) {
+        saveItems(calendarItems);
+        renderItems();
+        console.log(
+            `Automatic cleanup removed ${removed} finished calendar item` +
+            (removed === 1 ? "" : "s") + "."
+        );
+    }
+
+    return removed;
+}
+
+// Remove finished events when the Admin page loads.
+removeFinishedEvents();
+
+// Also check every minute so an event is removed shortly after it ends.
+setInterval(() => {
+    removeFinishedEvents();
+}, 60 * 1000);
+
+/* ----------------------------------------------------
    INITIAL RENDER
 ---------------------------------------------------- */
 
